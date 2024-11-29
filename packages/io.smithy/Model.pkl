@@ -1,0 +1,148 @@
+module Model
+
+/// Required. Defines the version of the Smithy specification (e.g., "2.0"). The version can be set to a single number like "2" or include a point release like "2.0".
+smithy: String
+
+/// Defines all of the metadata about the model using a JSON object. Each key is the metadata key to set, and each value is the metadata value to assign to the key.
+metadata: Mapping<String, Any>
+
+/// A map of absolute shape IDs to shape definitions.
+shapes: Mapping<AbsoluteRootShapeId, Shape>
+
+typealias SimpleShapeType =
+  "blob"|
+  "boolean"|
+  "document"|
+  "string"|
+  "byte"|
+  "short"|
+  "integer"|
+  "long"|
+  "float"|
+  "double"|
+  "bigInteger"|
+  "bigDecimal"|
+  "timestamp"
+
+typealias ShapeId = String(
+    let (parts = splitLimit("$", 2))
+      parts[0] is RootShapeId
+      && (parts.length < 2 || parts[1] is Identifier)
+  )
+typealias ShapeIdMember = String(startsWith("$") && substring(1, length) is Identifier)
+typealias RootShapeId = AbsoluteRootShapeId|Identifier
+typealias AbsoluteRootShapeId = String(
+    let (parts = splitLimit("#", 2))
+      parts.length == 2
+      && parts[0] is Namespace
+      && parts[1] is Identifier
+  )
+typealias Namespace = String(split(".").every((it) -> it is Identifier))
+typealias Identifier = String(matches(Regex(#"^(_{0,2}[a-zA-Z0-9]|[a-zA-Z])[a-zA-Z0-9_]*$"#)))
+typealias EnumMemberIdentifier = String(matches(Regex(#"^[a-zA-Z]+[a-zA-Z0-9_]*$"#)))
+
+class AstMember extends AstShapeReference {
+  traits: Mapping<AbsoluteRootShapeId, Any>?
+}
+open class AstShapeReference extends Shape {
+  target: AbsoluteRootShapeId
+}
+
+local const function isCaseInsensitiveDistinct(x: Set<Identifier>): Boolean = x.map((it) -> it.toLowerCase()).length == x.length
+local const function hasOnlyEnumMemberNames(x: Set<Identifier>): Boolean = x.every((it) -> it is EnumMemberIdentifier)
+
+open class Shape {
+}
+class ApplyShape extends Shape {
+  type: "apply"
+  traits: Mapping<ShapeId, Identifier>
+}
+abstract class ComposableShape extends Shape {
+  mixins: Listing<AstShapeReference>?
+}
+
+class SimpleShape extends ComposableShape {
+  type: SimpleShapeType
+}
+
+class ListShape extends ComposableShape {
+  type: "list"
+  member: AstMember
+}
+class MapShape extends ComposableShape {
+  type: "map"
+  key: AstShapeReference
+  value: AstShapeReference
+}
+class StructureShape extends ComposableShape {
+  type: "structure"
+  members: Mapping<Identifier, AstMember>(isCaseInsensitiveDistinct(keys))?
+}
+class UnionShape extends ComposableShape {
+  type: "union"
+  members: Mapping<Identifier, AstMember>(!isEmpty && isCaseInsensitiveDistinct(keys))
+}
+class EnumShape extends ComposableShape {
+  type: "enum"
+  members: Mapping<Identifier, AstMember>(!isEmpty && isCaseInsensitiveDistinct(keys) && hasOnlyEnumMemberNames(keys))
+}
+class IntEnumShape extends ComposableShape {
+  type: "intEnum"
+  members: Mapping<Identifier, AstMember>(!isEmpty && isCaseInsensitiveDistinct(keys) && hasOnlyEnumMemberNames(keys))
+}
+
+class ServiceShape extends ComposableShape {
+  type: "service"
+  /// Defines the version of the service. The version can be provided in any format (e.g., 2017-02-11, 2.0, etc).
+  version: String?
+  /// Binds a list of operations to the service. Each reference MUST target an operation.
+  operations: Listing<AstShapeReference>
+  /// Binds a list of resources to the service. Each reference MUST target a resource.
+  resources: Listing<AstShapeReference>
+  /// Defines a list of common errors that every operation bound within the closure of the service can return. Each provided shape ID MUST target a structure shape that is marked with the error trait.
+  errors: Listing<AstShapeReference>
+  /// Traits to apply to the service
+  traits: Mapping<ShapeId, Any>
+  /// Disambiguates shape name conflicts in the service closure.
+  rename: Mapping<ShapeId, Identifier>
+}
+
+class ResourceShape extends ComposableShape {
+  type: "resource"
+  /// Defines identifier names and shape IDs used to identify the resource.
+  identifiers: Mapping<String, AstShapeReference>
+  /// Defines a map of property string names to shape IDs that enumerate the properties of the resource.
+  properties: Mapping<String, AstShapeReference>
+  /// Defines the lifecycle operation used to create a resource using one or more identifiers created by the service.
+  create: AstShapeReference?
+  /// Defines an idempotent lifecycle operation used to create a resource using identifiers provided by the client.
+  put: AstShapeReference?
+  /// Defines the lifecycle operation used to retrieve the resource.
+  `read`: AstShapeReference?
+  /// Defines the lifecycle operation used to update the resource.
+  update: AstShapeReference?
+  /// Defines the lifecycle operation used to delete the resource.
+  `delete`: AstShapeReference?
+  /// Defines the lifecycle operation used to list resources of this type.
+  list: AstShapeReference?
+  /// Binds a list of non-lifecycle instance operations to the resource. Each reference MUST target an operation.
+  operations: Listing<AstShapeReference>
+  /// Binds a list of non-lifecycle collection operations to the resource. Each reference MUST target an operation.
+  collectionOperations: Listing<AstShapeReference>
+  /// Binds a list of resources to this resource as a child resource, forming a containment relationship. The resources MUST NOT have a cyclical containment hierarchy, and a resource can not be bound more than once in the entire closure of a resource or service. Each reference MUST target a resource.
+  resources: Listing<AstShapeReference>
+  /// Traits to apply to the resource.
+  traits: Mapping<ShapeId, Any>
+}
+
+class OperationShape extends ComposableShape {
+  type: "operation"
+  /// Defines the optional input structure of the operation. The input of an operation MUST resolve to a Structure.
+  input: AstShapeReference
+  /// Defines the optional output structure of the operation. The output of an operation MUST resolve to a Structure.
+  output: AstShapeReference
+  /// Defines the list of errors that MAY be encountered when invoking the operation. Each reference MUST resolve to a Structure shape that is marked with the error trait trait.
+  errors: Listing<AstShapeReference>
+  /// Traits to apply to the operation.
+  traits: Mapping<ShapeId, Any>
+}

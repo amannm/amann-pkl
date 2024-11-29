@@ -1,0 +1,48 @@
+import "package://pkg.pkl-lang.org/pkl-pantry/pkl.experimental.deepToTyped@1.0.5#/deepToTyped.pkl"
+import "pkl:json"
+import "Model.pkl"
+
+local parsed = new json.Parser { useMapping = true }.parse(read("file:/dev/stdin")) as Mapping<String, Any>
+local rawShapes = parsed["shapes"] as Mapping<String, Any>
+local typed = rawShapes.toMap().map((k, v) ->
+  Pair(k as Model.ShapeId, let (shapeMapping = new Mapping<Model.ShapeId, (Any) -> Model.Shape> {
+    ["blob"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["boolean"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["document"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["string"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["byte"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["short"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["integer"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["long"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["float"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["double"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["bigInteger"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["bigDecimal"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+    ["timestamp"] = (x: Any) -> deepToTyped.apply(Model.SimpleShape, x) as Model.SimpleShape
+
+    ["structure"] = (x: Any) -> deepToTyped.apply(Model.StructureShape, x) as Model.StructureShape
+    ["map"] = (x: Any) -> deepToTyped.apply(Model.MapShape, x) as Model.MapShape
+    ["list"] = (x: Any) -> deepToTyped.apply(Model.ListShape, x) as Model.ListShape
+    ["union"] = (x: Any) -> deepToTyped.apply(Model.UnionShape, x) as Model.UnionShape
+    ["enum"] = (x: Any) -> deepToTyped.apply(Model.EnumShape, x) as Model.EnumShape
+    ["operation"] = (x: Any) -> deepToTyped.apply(Model.OperationShape, x) as Model.OperationShape
+    ["service"] = (x: Any) -> deepToTyped.apply(Model.ServiceShape, x) as Model.ServiceShape
+    ["resource"] = (x: Any) -> deepToTyped.apply(Model.ResourceShape, x) as Model.ResourceShape
+  })
+    if (v is Mapping<Model.ShapeId, Any>)
+      let (typ = v["type"] as String)
+        shapeMapping.getOrNull(typ)?.apply(v) ?? throw("unexpected shape type: \(typ)")
+    else
+      throw("unexpected type at shape ID: \(k)"
+      ))
+).toMapping()
+
+
+output {
+  value = new Model {
+    smithy = parsed["smithy"] as String
+    metadata = parsed["metadata"] as Mapping<String, Any>
+    shapes = typed
+  }
+  renderer = new PcfRenderer{omitNullProperties = true}
+}
